@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>CornerPXL Analyzer</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+
+  <body>
+    <div class="wrap">
+      <div class="hero">
+        <h1 class="title">CornerPXL Analyzer</h1>
+        <p class="subtitle">Upload your data</p>
+      </div>
+
+      <div class="panel">
+        <form id="form">
+          <div class="row">
+            <div class="field">
+              <div class="label">Website Link</div>
+              <input class="input" type="url" name="websiteLink" placeholder="https://example.com" required />
+            </div>
+            <div class="field">
+              <div class="label">LinkedIn Link</div>
+              <input class="input" type="url" name="linkedinLink" placeholder="https://linkedin.com/in/..." required />
+            </div>
+          </div>
+
+          <div class="drop" id="dropzone">
+            <div class="dropInner">
+              <div class="icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                  <path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+              </div>
+
+              <p class="dropTitle">Drop file here</p>
+              <p class="dropMeta">Supported formats: any • Max size: 50MB</p>
+
+              <div class="fileLine hidden" id="fileLine"></div>
+              <div class="browse" id="browseBtn">Browse file</div>
+            </div>
+
+            <!-- IMPORTANT: field name is "file" -->
+            <input id="fileInput" type="file" name="file" />
+          </div>
+
+          <button id="analyzeBtn" class="cta" type="submit">
+            <span id="ctaIcon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path d="M12 3v10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                <path d="M8 11l4 4 4-4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M4 20h16" stroke="white" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <span id="ctaText">Analyze</span>
+          </button>
+        </form>
+      </div>
+
+      <div class="mini">
+        <div class="miniCard">
+          <div class="icon center">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M12 3v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h4>Easy Upload</h4>
+          <p>Drag & drop or click to browse.</p>
+        </div>
+
+        <div class="miniCard">
+          <div class="icon center">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h4>Fast Processing</h4>
+          <p>n8n workflow runs and returns results.</p>
+        </div>
+
+        <div class="miniCard">
+          <div class="icon center">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M14 2v6h6" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <h4>Instant Download</h4>
+          <p>Download your reports when ready.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESULT MODAL -->
+    <div id="overlay" class="overlay" role="dialog" aria-modal="true">
+      <div class="modal">
+        <div class="modalHeader">
+          <div id="badge" class="badge">✓</div>
+          <h3 id="modalTitle" class="modalTitle">Success</h3>
+        </div>
+        <p id="modalText" class="modalText"></p>
+
+        <div id="downloadLinks" class="links hidden"></div>
+
+        <div class="actions">
+          <button id="okBtn" class="btn btnPrimary" type="button">Okay</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Load configuration from config.js (can be generated from .env) -->
+    <script src="config.js"></script>
+    <script>
+      // Get webhook URL from config or use default
+      // NOTE: Webhook URL will be visible in browser. For production, consider:
+      // 1. Adding authentication to n8n webhook
+      // 2. Using a server-side proxy
+      const N8N_WEBHOOK_URL = window.APP_CONFIG?.N8N_WEBHOOK_URL || null;
+
+      const form = document.getElementById("form");
+      const dropzone = document.getElementById("dropzone");
+      const fileInput = document.getElementById("fileInput");
+      const browseBtn = document.getElementById("browseBtn");
+      const fileLine = document.getElementById("fileLine");
+
+      const overlay = document.getElementById("overlay");
+      const analyzeBtn = document.getElementById("analyzeBtn");
+      const ctaText = document.getElementById("ctaText");
+      const ctaIcon = document.getElementById("ctaIcon");
+
+      const badge = document.getElementById("badge");
+      const modalTitle = document.getElementById("modalTitle");
+      const modalText = document.getElementById("modalText");
+      const downloadLinks = document.getElementById("downloadLinks");
+      const okBtn = document.getElementById("okBtn");
+
+      function humanSize(bytes){
+        const mb = bytes / (1024*1024);
+        if (mb >= 1) return `${mb.toFixed(2)} MB`;
+        const kb = bytes / 1024;
+        return `${kb.toFixed(1)} KB`;
+      }
+
+      function setFileLine(file){
+        if (!file){ fileLine.classList.add("hidden"); fileLine.innerHTML=""; return; }
+        fileLine.classList.remove("hidden");
+        fileLine.innerHTML = `${file.name} <span>(${humanSize(file.size)})</span>`;
+      }
+
+      function base64ToBlob(base64, mimeType = "application/pdf"){
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++){
+          byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        return new Blob([byteArray], { type: mimeType });
+      }
+
+      function downloadBlob(blob, filename){
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function setLoading(isLoading){
+        analyzeBtn.disabled = isLoading;
+        if (isLoading){
+          ctaText.textContent = "Analyzing...";
+          ctaIcon.innerHTML = '<div class="spinner" aria-hidden="true"></div>';
+        } else {
+          ctaText.textContent = "Analyze";
+          ctaIcon.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <path d="M12 3v10" stroke="white" stroke-width="2" stroke-linecap="round"/>
+              <path d="M8 11l4 4 4-4" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M4 20h16" stroke="white" stroke-width="2" stroke-linecap="round"/>
+            </svg>`;
+        }
+      }
+
+      function showModal({ ok, text, links }){
+        overlay.classList.add("show");
+        badge.className = "badge";
+        if (ok){
+          badge.textContent = "✓";
+          badge.classList.add("success");
+          modalTitle.textContent = "Success";
+          modalText.textContent = text || "Your reports are ready.";
+        } else {
+          badge.textContent = "!";
+          badge.classList.add("error");
+          modalTitle.textContent = "Error";
+          modalText.textContent = text || "Something went wrong.";
+        }
+
+        downloadLinks.innerHTML = "";
+        if (Array.isArray(links) && links.length){
+          downloadLinks.classList.remove("hidden");
+          links.forEach((r, index) => {
+            const a = document.createElement("a");
+            a.className = "linkBtn";
+            a.href = r.url;
+            a.download = r.name || `report-${index + 1}.pdf`;
+            a.target = "_blank";
+            a.rel = "noopener";
+            a.innerHTML = `<span>${r.name || `Report ${index + 1}`}</span><small>Download</small>`;
+            downloadLinks.appendChild(a);
+          });
+        } else {
+          downloadLinks.classList.add("hidden");
+        }
+      }
+
+      function resetFlow(){
+        overlay.classList.remove("show");
+        form.reset();
+        setFileLine(null);
+        setLoading(false);
+      }
+      okBtn.addEventListener("click", resetFlow);
+
+      browseBtn.addEventListener("click", (e) => { e.preventDefault(); fileInput.click(); });
+      dropzone.addEventListener("click", (e) => {
+        if (e.target?.closest?.("#browseBtn")) return;
+        fileInput.click();
+      });
+
+      fileInput.addEventListener("change", () => setFileLine(fileInput.files?.[0] || null));
+
+      function prevent(e){ e.preventDefault(); e.stopPropagation(); }
+
+      ["dragenter","dragover"].forEach(evt =>
+        dropzone.addEventListener(evt, (e) => { prevent(e); dropzone.classList.add("dragover"); })
+      );
+      ["dragleave","drop"].forEach(evt =>
+        dropzone.addEventListener(evt, (e) => { prevent(e); dropzone.classList.remove("dragover"); })
+      );
+
+      dropzone.addEventListener("drop", (e) => {
+        const file = e.dataTransfer?.files?.[0];
+        if (!file) return;
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+        setFileLine(file);
+      });
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        if (!N8N_WEBHOOK_URL){
+          showModal({ ok:false, text:"Webhook URL is not configured. Please contact support." });
+          return;
+        }
+
+        const file = fileInput.files?.[0];
+        if (!file){
+          showModal({ ok:false, text:"Please upload a file." });
+          return;
+        }
+
+        setLoading(true);
+
+        try{
+          const fd = new FormData(form); // includes websiteLink, linkedinLink, file
+
+
+
+          const res = await fetch(N8N_WEBHOOK_URL, { method:"POST", body: fd });
+
+          if (!res.ok){
+            const errText = await res.text().catch(()=>"");
+            throw new Error(errText || `Request failed (${res.status})`);
+          }
+
+          const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+          // A) ZIP/binary
+          if (ct.includes("application/zip") || ct.includes("application/octet-stream")){
+            const blob = await res.blob();
+            downloadBlob(blob, "reports.zip");
+            showModal({ ok:true, text:"Done! Report download will start now." });
+            return;
+          }
+
+          // B) JSON with URLs or file URLs
+          if (ct.includes("application/json")){
+            const data = await res.json();
+            if (!data?.ok) throw new Error(data?.error || "Workflow returned ok=false");
+            
+            // Processing reports: can be array of files or array of URLs
+            let reports = [];
+            if (data.reports && Array.isArray(data.reports)){
+              reports = data.reports.map((report, index) => {
+                // If this is a base64 file
+                if (report.base64 && report.filename){
+                  const blob = base64ToBlob(report.base64, report.mimeType || "application/pdf");
+                  const url = URL.createObjectURL(blob);
+                  return {
+                    name: report.filename,
+                    url: url
+                  };
+                }
+                // If this is a URL
+                if (report.url){
+                  return {
+                    name: report.name || report.filename || `Report ${index + 1}.pdf`,
+                    url: report.url
+                  };
+                }
+                // If this is just a string (URL)
+                if (typeof report === "string"){
+                  return {
+                    name: `Report ${index + 1}.pdf`,
+                    url: report
+                  };
+                }
+                return report;
+              });
+            }
+            
+            // Auto-download files if they are blob URLs
+            reports.forEach((report, index) => {
+              if (report.url && report.url.startsWith('blob:')){
+                // This is a blob URL, auto-downloading
+                setTimeout(() => {
+                  const a = document.createElement("a");
+                  a.href = report.url;
+                  a.download = report.name || `report-${index + 1}.pdf`;
+                  document.body.appendChild(a);
+                  a.click();
+                  a.remove();
+                }, index * 300); // Delay between downloads
+              }
+            });
+            
+            showModal({
+              ok:true,
+              text: reports.length > 0 
+                ? `Done! ${reports.length} report${reports.length > 1 ? 's' : ''} ${reports.length > 1 ? 'are' : 'is'} downloading automatically. You can also download them below.`
+                : "Done! Your reports have been processed.",
+              links: reports
+            });
+            return;
+          }
+
+          // fallback
+          const text = await res.text();
+          showModal({ ok:true, text:`Success (unexpected response): ${text.slice(0, 180)}...` });
+
+        } catch (err){
+          showModal({ ok:false, text: `Error: ${err?.message || err}` });
+        } finally {
+          setLoading(false);
+        }
+      });
+    </script>
+  </body>
+</html>
