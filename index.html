@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>CornerPXL Analyzer</title>
+    <title>CornerPXL Intelligence</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
 
   <body>
     <div class="wrap">
       <div class="hero">
-        <h1 class="title">CornerPXL Analyzer</h1>
-        <p class="subtitle">Upload your data</p>
+        <h1 class="title">CornerPXL Intelligence</h1>
+        <p class="subtitle">Paste links + upload context to generate brand, market, and strategy reports.</p>
       </div>
 
       <div class="panel">
@@ -23,7 +23,7 @@
             </div>
             <div class="field">
               <div class="label">LinkedIn Link</div>
-              <input class="input" type="url" name="linkedinLink" placeholder="https://linkedin.com/in/..." required />
+              <input class="input" type="url" name="linkedinLink" placeholder="https://linkedin.com/in/..." />
             </div>
           </div>
 
@@ -38,14 +38,14 @@
               </div>
 
               <p class="dropTitle">Drop file here</p>
-              <p class="dropMeta">Supported formats: any • Max size: 50MB</p>
+              <p class="dropMeta">Supported formats: PDF, DOC/DOCX, TXT • Max size: 50MB</p>
 
               <div class="fileLine hidden" id="fileLine"></div>
               <div class="browse" id="browseBtn">Browse file</div>
             </div>
 
             <!-- IMPORTANT: field name is "file" -->
-            <input id="fileInput" type="file" name="file" />
+            <input id="fileInput" type="file" name="file" accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" />
           </div>
 
           <button id="analyzeBtn" class="cta" type="submit">
@@ -56,7 +56,7 @@
                 <path d="M4 20h16" stroke="white" stroke-width="2" stroke-linecap="round"/>
               </svg>
             </span>
-            <span id="ctaText">Analyze</span>
+            <span id="ctaText">Generate Reports</span>
           </button>
         </form>
       </div>
@@ -71,7 +71,7 @@
             </svg>
           </div>
           <h4>Easy Upload</h4>
-          <p>Drag & drop or click to browse.</p>
+          <p>Add a website link, optional LinkedIn, and any supporting files.</p>
         </div>
 
         <div class="miniCard">
@@ -81,7 +81,7 @@
             </svg>
           </div>
           <h4>Fast Processing</h4>
-          <p>n8n workflow runs and returns results.</p>
+          <p>We analyze your inputs and generate research + strategy documents automatically.</p>
         </div>
 
         <div class="miniCard">
@@ -92,7 +92,7 @@
             </svg>
           </div>
           <h4>Instant Download</h4>
-          <p>Download your reports when ready.</p>
+          <p>Download your Brand Research, Market Research, and Strategy Document when ready.</p>
         </div>
       </div>
     </div>
@@ -147,8 +147,22 @@
         return `${kb.toFixed(1)} KB`;
       }
 
+      function isValidFileType(file){
+        const allowedExtensions = ['.pdf', '.doc', '.docx', '.txt'];
+        const fileName = file.name.toLowerCase();
+        return allowedExtensions.some(ext => fileName.endsWith(ext));
+      }
+
       function setFileLine(file){
         if (!file){ fileLine.classList.add("hidden"); fileLine.innerHTML=""; return; }
+        
+        if (!isValidFileType(file)){
+          fileLine.classList.remove("hidden");
+          fileLine.innerHTML = `<span style="color: var(--error);">Unsupported file type. Please upload PDF, DOC/DOCX, or TXT files only.</span>`;
+          fileInput.value = ''; // Clear the invalid file
+          return;
+        }
+        
         fileLine.classList.remove("hidden");
         fileLine.innerHTML = `${file.name} <span>(${humanSize(file.size)})</span>`;
       }
@@ -180,7 +194,7 @@
           ctaText.textContent = "Analyzing...";
           ctaIcon.innerHTML = '<div class="spinner" aria-hidden="true"></div>';
         } else {
-          ctaText.textContent = "Analyze";
+          ctaText.textContent = "Generate Reports";
           ctaIcon.innerHTML = `
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
               <path d="M12 3v10" stroke="white" stroke-width="2" stroke-linecap="round"/>
@@ -251,6 +265,12 @@
       dropzone.addEventListener("drop", (e) => {
         const file = e.dataTransfer?.files?.[0];
         if (!file) return;
+        
+        if (!isValidFileType(file)){
+          showModal({ ok:false, text:"Unsupported file type. Please upload PDF, DOC/DOCX, or TXT files only." });
+          return;
+        }
+        
         const dt = new DataTransfer();
         dt.items.add(file);
         fileInput.files = dt.files;
@@ -268,6 +288,11 @@
         const file = fileInput.files?.[0];
         if (!file){
           showModal({ ok:false, text:"Please upload a file." });
+          return;
+        }
+
+        if (!isValidFileType(file)){
+          showModal({ ok:false, text:"Unsupported file type. Please upload PDF, DOC/DOCX, or TXT files only." });
           return;
         }
 
