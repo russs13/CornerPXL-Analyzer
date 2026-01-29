@@ -22,6 +22,54 @@ body{
 }
 .wrap{max-width: 980px; margin: 56px auto; padding: 0 18px;}
 .hero{text-align:center; margin-bottom: 26px;}
+
+/* Test Mode Toggle */
+.testMode{
+  max-width: 720px;
+  margin: 0 auto 16px;
+  padding: 14px 18px;
+  background: rgba(173,216,230,0.1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.testToggle{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--text);
+}
+.testToggle input[type="checkbox"]{
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+.testOptions{
+  margin-top: 12px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.testRadio{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--muted);
+}
+.testRadio input[type="radio"]{
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+.testRadio input[type="radio"]:checked + span{
+  color: var(--primary);
+}
 .title{
   font-size: 48px; line-height: 1.1; margin:0;
   font-weight: 800; letter-spacing: -0.02em; color: var(--primary);
@@ -58,6 +106,24 @@ body{
 .input:focus{
   border-color: rgba(0,0,128,0.55);
   box-shadow: 0 0 0 4px rgba(173,216,230,0.25);
+}
+.input.error{
+  border-color: var(--error);
+  box-shadow: 0 0 0 4px rgba(239,68,68,0.15);
+}
+.input.error:focus{
+  border-color: var(--error);
+  box-shadow: 0 0 0 4px rgba(239,68,68,0.25);
+}
+.errorMsg{
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--error);
+  font-weight: 600;
+  min-height: 16px;
+}
+.errorMsg.hidden{
+  display: none;
 }
 
 .drop{
@@ -157,14 +223,16 @@ input[type="file"]{display:none}
 }
 .overlay.show{display:flex;}
 .modal{
-  width: min(560px, 100%);
+  width: min(720px, 100%);
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 18px;
   box-shadow: var(--shadow);
-  padding: 18px;
+  padding: 35px;
+  max-height: 90vh;
+  overflow-y: auto;
 }
-.modalHeader{display:flex; align-items:center; gap: 10px; margin-bottom: 8px;}
+.modalHeader{display:flex; align-items:center; gap: 10px; margin-bottom: 20px;}
 .badge{
   width: 40px; height: 40px; border-radius: 14px;
   display:grid; place-items:center;
@@ -191,6 +259,7 @@ input[type="file"]{display:none}
   padding: 10px 12px;
   font-weight: 900;
   cursor:pointer;
+  padding: 12px 20px;
 }
 .btnPrimary{
   border: 0;

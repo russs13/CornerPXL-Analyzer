@@ -14,16 +14,36 @@
         <p class="subtitle">Paste links + upload context to generate brand, market, and strategy reports.</p>
       </div>
 
+      <!-- Test Mode Toggle -->
+      <div class="testMode">
+        <label class="testToggle">
+          <input type="checkbox" id="mockModeToggle" />
+          <span>Test Mode (Mock Responses)</span>
+        </label>
+        <div class="testOptions" id="testOptions" style="display: none;">
+          <label class="testRadio">
+            <input type="radio" name="mockResponse" value="success" checked />
+            <span>Success Response</span>
+          </label>
+          <label class="testRadio">
+            <input type="radio" name="mockResponse" value="error" />
+            <span>Error Response</span>
+          </label>
+        </div>
+      </div>
+
       <div class="panel">
         <form id="form">
           <div class="row">
             <div class="field">
               <div class="label">Website Link</div>
-              <input class="input" type="url" name="websiteLink" placeholder="https://example.com" required />
+              <input class="input" type="url" name="websiteLink" id="websiteLink" placeholder="https://example.com" required />
+              <div class="errorMsg hidden" id="websiteLinkError"></div>
             </div>
             <div class="field">
               <div class="label">LinkedIn Link</div>
-              <input class="input" type="url" name="linkedinLink" placeholder="https://linkedin.com/in/..." />
+              <input class="input" type="url" name="linkedinLink" id="linkedinLink" placeholder="https://linkedin.com/in/..." />
+              <div class="errorMsg hidden" id="linkedinLinkError"></div>
             </div>
           </div>
 
@@ -109,7 +129,7 @@
         <div id="downloadLinks" class="links hidden"></div>
 
         <div class="actions">
-          <button id="okBtn" class="btn btnPrimary" type="button">Okay</button>
+          <button id="okBtn" class="btn btnPrimary" type="button">Done</button>
         </div>
       </div>
     </div>
@@ -128,6 +148,11 @@
       const fileInput = document.getElementById("fileInput");
       const browseBtn = document.getElementById("browseBtn");
       const fileLine = document.getElementById("fileLine");
+      
+      const websiteLinkInput = document.getElementById("websiteLink");
+      const linkedinLinkInput = document.getElementById("linkedinLink");
+      const websiteLinkError = document.getElementById("websiteLinkError");
+      const linkedinLinkError = document.getElementById("linkedinLinkError");
 
       const overlay = document.getElementById("overlay");
       const analyzeBtn = document.getElementById("analyzeBtn");
@@ -140,6 +165,9 @@
       const downloadLinks = document.getElementById("downloadLinks");
       const okBtn = document.getElementById("okBtn");
 
+      const mockModeToggle = document.getElementById("mockModeToggle");
+      const testOptions = document.getElementById("testOptions");
+
       function humanSize(bytes){
         const mb = bytes / (1024*1024);
         if (mb >= 1) return `${mb.toFixed(2)} MB`;
@@ -151,6 +179,67 @@
         const allowedExtensions = ['.pdf', '.doc', '.docx', '.txt'];
         const fileName = file.name.toLowerCase();
         return allowedExtensions.some(ext => fileName.endsWith(ext));
+      }
+
+      function isValidUrl(url, allowEmpty = false){
+        if (!url || url.trim() === '') {
+          return allowEmpty;
+        }
+        try {
+          const urlObj = new URL(url);
+          return urlObj.protocol === 'http:' || urlObj.protocol === 'https:';
+        } catch {
+          return false;
+        }
+      }
+
+      function isValidLinkedInUrl(url){
+        if (!url || url.trim() === '') return true; // Optional field
+        const linkedinPattern = /^https?:\/\/(www\.)?linkedin\.com\/(in|company|school)\/.+/i;
+        return linkedinPattern.test(url);
+      }
+
+      function showError(inputElement, errorElement, message){
+        inputElement.classList.add('error');
+        errorElement.textContent = message;
+        errorElement.classList.remove('hidden');
+      }
+
+      function hideError(inputElement, errorElement){
+        inputElement.classList.remove('error');
+        errorElement.classList.add('hidden');
+      }
+
+      function validateWebsiteLink(){
+        const value = websiteLinkInput.value.trim();
+        if (!value) {
+          showError(websiteLinkInput, websiteLinkError, 'Website link is required');
+          return false;
+        }
+        if (!isValidUrl(value)) {
+          showError(websiteLinkInput, websiteLinkError, 'Please enter a valid URL (e.g., https://example.com)');
+          return false;
+        }
+        hideError(websiteLinkInput, websiteLinkError);
+        return true;
+      }
+
+      function validateLinkedInLink(){
+        const value = linkedinLinkInput.value.trim();
+        if (!value) {
+          hideError(linkedinLinkInput, linkedinLinkError);
+          return true; // Optional field
+        }
+        if (!isValidUrl(value)) {
+          showError(linkedinLinkInput, linkedinLinkError, 'Please enter a valid URL');
+          return false;
+        }
+        if (!isValidLinkedInUrl(value)) {
+          showError(linkedinLinkInput, linkedinLinkError, 'Please enter a valid LinkedIn URL (e.g., https://linkedin.com/in/username)');
+          return false;
+        }
+        hideError(linkedinLinkInput, linkedinLinkError);
+        return true;
       }
 
       function setFileLine(file){
@@ -186,6 +275,34 @@
         a.click();
         a.remove();
         URL.revokeObjectURL(url);
+      }
+
+      async function downloadFromUrl(url, filename){
+        try {
+          const response = await fetch(url, {
+            mode: 'cors',
+            credentials: 'omit'
+          });
+          if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
+          const blob = await response.blob();
+          downloadBlob(blob, filename);
+        } catch (err) {
+          console.error('Download error (CORS or network):', err);
+          
+          // For CORS-restricted files, we can't force download from client-side JavaScript
+          // Try to use download attribute (works for same-origin, may work for some servers)
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          
+          // If download attribute didn't work (CORS issue), the file will open in new tab
+          // User can use browser's "Save As" if needed
+        }
       }
 
       function setLoading(isLoading){
@@ -225,9 +342,27 @@
           links.forEach((r, index) => {
             const a = document.createElement("a");
             a.className = "linkBtn";
-            a.href = r.url;
-            a.download = r.name || `report-${index + 1}.pdf`;
-            a.target = "_blank";
+            const filename = r.name || `report-${index + 1}.pdf`;
+            const url = r.url;
+            
+            // Handle click to force download
+            a.addEventListener("click", async (e) => {
+              e.preventDefault();
+              
+              // If it's already a blob URL, download directly
+              if (url.startsWith('blob:')) {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                downloadBlob(blob, filename);
+                return;
+              }
+              
+              // For external URLs, fetch and download
+              await downloadFromUrl(url, filename);
+            });
+            
+            a.href = url;
+            a.download = filename;
             a.rel = "noopener";
             a.innerHTML = `<span>${r.name || `Report ${index + 1}`}</span><small>Download</small>`;
             downloadLinks.appendChild(a);
@@ -242,8 +377,31 @@
         form.reset();
         setFileLine(null);
         setLoading(false);
+        // Clear validation errors
+        hideError(websiteLinkInput, websiteLinkError);
+        hideError(linkedinLinkInput, linkedinLinkError);
       }
       okBtn.addEventListener("click", resetFlow);
+
+      // Test mode toggle
+      mockModeToggle.addEventListener("change", (e) => {
+        testOptions.style.display = e.target.checked ? "flex" : "none";
+      });
+
+      // Link validation event listeners
+      websiteLinkInput.addEventListener("blur", validateWebsiteLink);
+      websiteLinkInput.addEventListener("input", () => {
+        if (websiteLinkInput.classList.contains('error')) {
+          validateWebsiteLink();
+        }
+      });
+
+      linkedinLinkInput.addEventListener("blur", validateLinkedInLink);
+      linkedinLinkInput.addEventListener("input", () => {
+        if (linkedinLinkInput.classList.contains('error')) {
+          validateLinkedInLink();
+        }
+      });
 
       browseBtn.addEventListener("click", (e) => { e.preventDefault(); fileInput.click(); });
       dropzone.addEventListener("click", (e) => {
@@ -280,9 +438,21 @@
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
 
-        if (!N8N_WEBHOOK_URL){
+        // Check if mock mode is enabled
+        const isMockMode = mockModeToggle?.checked;
+
+        // Only check webhook URL if not in mock mode
+        if (!isMockMode && !N8N_WEBHOOK_URL){
           showModal({ ok:false, text:"Webhook URL is not configured. Please contact support." });
           return;
+        }
+
+        // Validate links
+        const isWebsiteLinkValid = validateWebsiteLink();
+        const isLinkedInLinkValid = validateLinkedInLink();
+        
+        if (!isWebsiteLinkValid || !isLinkedInLinkValid) {
+          return; // Validation errors are shown inline
         }
 
         const file = fileInput.files?.[0];
@@ -299,9 +469,61 @@
         setLoading(true);
 
         try{
+          const mockResponseType = document.querySelector('input[name="mockResponse"]:checked')?.value || 'success';
+
+          if (isMockMode) {
+            // Simulate network delay (2 seconds)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            if (mockResponseType === 'error') {
+              // Mock error response
+              const errorData = {
+                error: "Cannot read properties of undefined (reading 'split')"
+              };
+              throw new Error(errorData.error);
+            } else {
+              // Mock success response
+              const successData = {
+                "ok": true,
+                "reports": [
+                  { "name": "report-1.pdf", "url": "https://filesamples.com/samples/document/txt/sample1.txt" },
+                  { "name": "report-2.csv", "url": "https://filesamples.com/samples/document/txt/sample2.txt" },
+                  { "name": "report-3.pdf", "url": "https://filesamples.com/samples/document/txt/sample3.txt" }
+              ]
+              };
+
+              // Process mock success response
+              let reports = [];
+              if (successData.reports && Array.isArray(successData.reports)){
+                reports = successData.reports.map((report, index) => {
+                  if (report.url){
+                    return {
+                      name: report.name || `Report ${index + 1}.pdf`,
+                      url: report.url
+                    };
+                  }
+                  return report;
+                });
+              }
+
+              showModal({
+                ok: true,
+                text: reports.length > 0 
+                  ? `Done! ${reports.length} report${reports.length > 1 ? 's' : ''} ${reports.length > 1 ? 'are' : 'is'} ready. You can download them below.`
+                  : "Done! Your reports have been processed.",
+                links: reports
+              });
+              setLoading(false);
+              return;
+            }
+          }
+
+          // Ensure webhook is not called when mock mode is enabled
+          if (isMockMode) {
+            return; // Already handled above, this is a safety guard
+          }
+
           const fd = new FormData(form); // includes websiteLink, linkedinLink, file
-
-
 
           const res = await fetch(N8N_WEBHOOK_URL, { method:"POST", body: fd });
 
