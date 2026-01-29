@@ -160,9 +160,29 @@ body{
   font-size: 13px;
   color: var(--text);
   font-weight: 750;
+  max-height: 200px;
+  overflow-y: auto;
 }
 .fileLine.hidden{display:none;}
 .fileLine span{color: var(--muted); font-weight: 600;}
+.fileLine div{text-align: left;}
+.fileItem{
+  transition: background 140ms ease;
+}
+.fileItem:hover{
+  background: rgba(173,216,230,0.2) !important;
+}
+.removeFileBtn{
+  transition: all 140ms ease;
+  opacity: 0.7;
+}
+.removeFileBtn:hover{
+  opacity: 1;
+  transform: scale(1.2);
+}
+.removeFileBtn:active{
+  transform: scale(0.95);
+}
 .browse{
   margin-top: 8px;
   font-size: 13px;

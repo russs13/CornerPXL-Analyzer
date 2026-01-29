@@ -57,15 +57,15 @@
                 </svg>
               </div>
 
-              <p class="dropTitle">Drop file here</p>
-              <p class="dropMeta">Supported formats: PDF, DOC/DOCX, TXT • Max size: 50MB</p>
+              <p class="dropTitle">Drop files here</p>
+              <p class="dropMeta">Supported formats: PDF, DOC/DOCX, TXT • Max size: 50MB per file • Up to 5 files</p>
 
               <div class="fileLine hidden" id="fileLine"></div>
-              <div class="browse" id="browseBtn">Browse file</div>
+              <div class="browse" id="browseBtn">Browse files</div>
             </div>
 
             <!-- IMPORTANT: field name is "file" -->
-            <input id="fileInput" type="file" name="file" accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" />
+            <input id="fileInput" type="file" name="file" multiple accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" />
           </div>
 
           <button id="analyzeBtn" class="cta" type="submit">
@@ -242,18 +242,63 @@
         return true;
       }
 
-      function setFileLine(file){
-        if (!file){ fileLine.classList.add("hidden"); fileLine.innerHTML=""; return; }
+      function removeFile(indexToRemove){
+        const files = fileInput.files;
+        if (!files || files.length === 0) return;
         
-        if (!isValidFileType(file)){
+        const dt = new DataTransfer();
+        Array.from(files).forEach((file, index) => {
+          if (index !== indexToRemove) {
+            dt.items.add(file);
+          }
+        });
+        fileInput.files = dt.files;
+        setFileLine(fileInput.files);
+      }
+
+      function setFileLine(files){
+        if (!files || files.length === 0){ 
+          fileLine.classList.add("hidden"); 
+          fileLine.innerHTML=""; 
+          return; 
+        }
+        
+        // Check file count limit
+        if (files.length > 5) {
           fileLine.classList.remove("hidden");
-          fileLine.innerHTML = `<span style="color: var(--error);">Unsupported file type. Please upload PDF, DOC/DOCX, or TXT files only.</span>`;
-          fileInput.value = ''; // Clear the invalid file
+          fileLine.innerHTML = `<span style="color: var(--error);">Maximum 5 files allowed. Please select fewer files.</span>`;
+          fileInput.value = ''; // Clear the files
           return;
         }
         
+        // Validate all files
+        const invalidFiles = Array.from(files).filter(file => !isValidFileType(file));
+        if (invalidFiles.length > 0) {
+          fileLine.classList.remove("hidden");
+          fileLine.innerHTML = `<span style="color: var(--error);">Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOC/DOCX, or TXT files only.</span>`;
+          fileInput.value = ''; // Clear the invalid files
+          return;
+        }
+        
+        // Display all files with remove buttons
         fileLine.classList.remove("hidden");
-        fileLine.innerHTML = `${file.name} <span>(${humanSize(file.size)})</span>`;
+        const filesList = Array.from(files).map((file, index) => 
+          `<div class="fileItem" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; padding: 6px 8px; background: rgba(173,216,230,0.1); border-radius: 8px;">
+            <span>${index + 1}. ${file.name} <span style="color: var(--muted);">(${humanSize(file.size)})</span></span>
+            <button type="button" class="removeFileBtn" data-index="${index}" aria-label="Remove file" style="background: none; border: none; color: var(--error); cursor: pointer; padding: 4px 8px; font-size: 18px; font-weight: 900; line-height: 1;">×</button>
+          </div>`
+        ).join('');
+        fileLine.innerHTML = `<div style="text-align: left;">${filesList}</div>`;
+        
+        // Add event listeners to remove buttons
+        fileLine.querySelectorAll('.removeFileBtn').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const index = parseInt(btn.getAttribute('data-index'));
+            removeFile(index);
+          });
+        });
       }
 
       function base64ToBlob(base64, mimeType = "application/pdf"){
@@ -409,7 +454,7 @@
         fileInput.click();
       });
 
-      fileInput.addEventListener("change", () => setFileLine(fileInput.files?.[0] || null));
+      fileInput.addEventListener("change", () => setFileLine(fileInput.files || null));
 
       function prevent(e){ e.preventDefault(); e.stopPropagation(); }
 
@@ -421,18 +466,34 @@
       );
 
       dropzone.addEventListener("drop", (e) => {
-        const file = e.dataTransfer?.files?.[0];
-        if (!file) return;
+        const droppedFiles = e.dataTransfer?.files;
+        if (!droppedFiles || droppedFiles.length === 0) return;
         
-        if (!isValidFileType(file)){
-          showModal({ ok:false, text:"Unsupported file type. Please upload PDF, DOC/DOCX, or TXT files only." });
+        // Get existing files
+        const existingFiles = fileInput.files ? Array.from(fileInput.files) : [];
+        const newFiles = Array.from(droppedFiles);
+        
+        // Combine existing and new files
+        const allFiles = [...existingFiles, ...newFiles];
+        
+        // Check file count limit
+        if (allFiles.length > 5) {
+          showModal({ ok:false, text:`Maximum 5 files allowed. You have ${existingFiles.length} file(s) and tried to add ${newFiles.length}. Please drop fewer files.` });
           return;
         }
         
+        // Validate new files only
+        const invalidFiles = newFiles.filter(file => !isValidFileType(file));
+        if (invalidFiles.length > 0) {
+          showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOC/DOCX, or TXT files only.` });
+          return;
+        }
+        
+        // Add all files to input
         const dt = new DataTransfer();
-        dt.items.add(file);
+        allFiles.forEach(file => dt.items.add(file));
         fileInput.files = dt.files;
-        setFileLine(file);
+        setFileLine(fileInput.files);
       });
 
       form.addEventListener("submit", async (e) => {
@@ -455,15 +516,22 @@
           return; // Validation errors are shown inline
         }
 
-        const file = fileInput.files?.[0];
-        if (!file){
-          showModal({ ok:false, text:"Please upload a file." });
-          return;
-        }
-
-        if (!isValidFileType(file)){
-          showModal({ ok:false, text:"Unsupported file type. Please upload PDF, DOC/DOCX, or TXT files only." });
-          return;
+        const files = fileInput.files;
+        
+        // Files are optional, but if provided, validate them
+        if (files && files.length > 0) {
+          // Check file count limit
+          if (files.length > 5) {
+            showModal({ ok:false, text:"Maximum 5 files allowed. Please select fewer files." });
+            return;
+          }
+          
+          // Validate all files
+          const invalidFiles = Array.from(files).filter(file => !isValidFileType(file));
+          if (invalidFiles.length > 0) {
+            showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOC/DOCX, or TXT files only.` });
+            return;
+          }
         }
 
         setLoading(true);
