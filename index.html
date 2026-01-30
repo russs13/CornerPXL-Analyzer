@@ -375,6 +375,27 @@
 
       function setLoading(isLoading){
         analyzeBtn.disabled = isLoading;
+        
+        // Disable/enable all form inputs
+        websiteLinkInput.disabled = isLoading;
+        linkedinLinkInput.disabled = isLoading;
+        fileInput.disabled = isLoading;
+        mockModeToggle.disabled = isLoading;
+        
+        // Disable test mode radio buttons
+        document.querySelectorAll('input[name="mockResponse"]').forEach(radio => {
+          radio.disabled = isLoading;
+        });
+        
+        // Disable dropzone interactions
+        if (isLoading) {
+          dropzone.style.pointerEvents = 'none';
+          dropzone.style.opacity = '0.6';
+        } else {
+          dropzone.style.pointerEvents = 'auto';
+          dropzone.style.opacity = '1';
+        }
+        
         if (isLoading){
           ctaText.textContent = "Analyzing...";
           ctaIcon.innerHTML = '<div class="spinner" aria-hidden="true"></div>';
@@ -576,25 +597,43 @@
               // Mock success response
               const successData = {
                 "ok": true,
-                "reports": [
-                  { 
-                    "url": "https://n8n-dev.mindtech.studio/webhook-test/232a0caa-8e4d-4fdf-90ca-1facd01b44f8?key=cornerpxl-ad%2FMadison%20Montessori%20School%20Strategy%20Growth%20Blueprint%20%282026-01-29%29.pdf",
-                    "name": "Madison Montessori School Strategy Growth Blueprint (2026-01-29).pdf"
+                "results": [
+                  {
+                    "name": "brandResearch",
+                    "url": "https://n8n-dev.mindtech.studio/webhook/6fca094c-0db6-4d2e-b602-4221addf6035?key=cornerpxl-ad/Madison Montessori Brand Research (2026-01-30).pdf"
+                  },
+                  {
+                    "name": "marketResearch",
+                    "url": "https://n8n-dev.mindtech.studio/webhook/6fca094c-0db6-4d2e-b602-4221addf6035?key=cornerpxl-ad/Madison Montessori School Strategy Growth Blueprint (2026-01-30).pdf"
+                  },
+                  {
+                    "name": "strategyBrief",
+                    "url": "https://n8n-dev.mindtech.studio/webhook/6fca094c-0db6-4d2e-b602-4221addf6035?key=undefined"
                   }
-              ]
+                ]
               };
 
               // Process mock success response
               let reports = [];
-              if (successData.reports && Array.isArray(successData.reports)){
-                reports = successData.reports.map((report, index) => {
-                  if (report.url){
+              if (successData.results && Array.isArray(successData.results)){
+                reports = successData.results.map((result, index) => {
+                  if (result.url){
+                    // Generate friendly name from result.name or use provided name
+                    let displayName = result.name;
+                    if (result.name === 'brandResearch') {
+                      displayName = 'Brand Research';
+                    } else if (result.name === 'marketResearch') {
+                      displayName = 'Market Research';
+                    } else if (result.name === 'strategyBrief') {
+                      displayName = 'Strategy Brief';
+                    }
+                    
                     return {
-                      name: report.name || `Report ${index + 1}.pdf`,
-                      url: report.url
+                      name: displayName || result.name || `Report ${index + 1}.pdf`,
+                      url: result.url
                     };
                   }
-                  return report;
+                  return result;
                 });
               }
 
@@ -655,34 +694,44 @@
             const data = await res.json();
             if (!data?.ok) throw new Error(data?.error || "Workflow returned ok=false");
             
-            // Processing reports: can be array of files or array of URLs
+            // Processing results: can be array of files or array of URLs
             let reports = [];
-            if (data.reports && Array.isArray(data.reports)){
-              reports = data.reports.map((report, index) => {
+            if (data.results && Array.isArray(data.results)){
+              reports = data.results.map((result, index) => {
                 // If this is a base64 file
-                if (report.base64 && report.filename){
-                  const blob = base64ToBlob(report.base64, report.mimeType || "application/pdf");
+                if (result.base64 && result.filename){
+                  const blob = base64ToBlob(result.base64, result.mimeType || "application/pdf");
                   const url = URL.createObjectURL(blob);
                   return {
-                    name: report.filename,
+                    name: result.filename,
                     url: url
                   };
                 }
                 // If this is a URL
-                if (report.url){
+                if (result.url){
+                  // Generate friendly name from result.name
+                  let displayName = result.name;
+                  if (result.name === 'brandResearch') {
+                    displayName = 'Brand Research';
+                  } else if (result.name === 'marketResearch') {
+                    displayName = 'Market Research';
+                  } else if (result.name === 'strategyBrief') {
+                    displayName = 'Strategy Brief';
+                  }
+                  
                   return {
-                    name: report.name || report.filename || `Report ${index + 1}.pdf`,
-                    url: report.url
+                    name: displayName || result.name || result.filename || `Report ${index + 1}.pdf`,
+                    url: result.url
                   };
                 }
                 // If this is just a string (URL)
-                if (typeof report === "string"){
+                if (typeof result === "string"){
                   return {
                     name: `Report ${index + 1}.pdf`,
-                    url: report
+                    url: result
                   };
                 }
-                return report;
+                return result;
               });
             }
             
