@@ -58,14 +58,14 @@
               </div>
 
               <p class="dropTitle">Drop files here</p>
-              <p class="dropMeta">Supported formats: PDF, DOC/DOCX, TXT • Max size: 50MB per file • Up to 5 files</p>
+              <p class="dropMeta">Supported formats: PDF, DOCX, TXT • Max size: 50MB per file • Up to 5 files</p>
 
               <div class="fileLine hidden" id="fileLine"></div>
               <div class="browse" id="browseBtn">Browse files</div>
             </div>
 
             <!-- IMPORTANT: field name is "file" -->
-            <input id="fileInput" type="file" name="file" multiple accept=".pdf,.doc,.docx,.txt,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" />
+            <input id="fileInput" type="file" name="file" multiple accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" />
           </div>
 
           <button id="analyzeBtn" class="cta" type="submit">
@@ -176,7 +176,7 @@
       }
 
       function isValidFileType(file){
-        const allowedExtensions = ['.pdf', '.doc', '.docx', '.txt'];
+        const allowedExtensions = ['.pdf', '.docx', '.txt'];
         const fileName = file.name.toLowerCase();
         return allowedExtensions.some(ext => fileName.endsWith(ext));
       }
@@ -275,7 +275,7 @@
         const invalidFiles = Array.from(files).filter(file => !isValidFileType(file));
         if (invalidFiles.length > 0) {
           fileLine.classList.remove("hidden");
-          fileLine.innerHTML = `<span style="color: var(--error);">Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOC/DOCX, or TXT files only.</span>`;
+          fileLine.innerHTML = `<span style="color: var(--error);">Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.</span>`;
           fileInput.value = ''; // Clear the invalid files
           return;
         }
@@ -324,29 +324,52 @@
 
       async function downloadFromUrl(url, filename){
         try {
+          // Download from webhook
+          // Webhook handles file access server-side and returns the file
           const response = await fetch(url, {
+            method: 'POST',
             mode: 'cors',
-            credentials: 'omit'
+            credentials: 'omit',
+            headers: {
+              'Content-Type': 'application/json'
+            }
           });
-          if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
+          
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => '');
+            console.error('Download failed:', response.status, errorText);
+            
+            if (response.status === 404) {
+              showModal({ 
+                ok: false, 
+                text: `File not found: "${filename}". The file may have been moved or deleted.` 
+              });
+              return;
+            }
+            
+            if (response.status === 403) {
+              showModal({ 
+                ok: false, 
+                text: `Access denied: Unable to download "${filename}". Please contact support.` 
+              });
+              return;
+            }
+            
+            throw new Error(`Failed to fetch: ${response.status}`);
+          }
+          
+          // Get the blob and download
           const blob = await response.blob();
           downloadBlob(blob, filename);
+          
         } catch (err) {
-          console.error('Download error (CORS or network):', err);
+          console.error('Download error:', err);
           
-          // For CORS-restricted files, we can't force download from client-side JavaScript
-          // Try to use download attribute (works for same-origin, may work for some servers)
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = filename;
-          a.target = "_blank";
-          a.rel = "noopener noreferrer";
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          
-          // If download attribute didn't work (CORS issue), the file will open in new tab
-          // User can use browser's "Save As" if needed
+          // Show user-friendly error message
+          showModal({ 
+            ok: false, 
+            text: `Unable to download "${filename}": ${err.message || 'Network error'}. Please try again or contact support.` 
+          });
         }
       }
 
@@ -485,7 +508,7 @@
         // Validate new files only
         const invalidFiles = newFiles.filter(file => !isValidFileType(file));
         if (invalidFiles.length > 0) {
-          showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOC/DOCX, or TXT files only.` });
+          showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.` });
           return;
         }
         
@@ -529,7 +552,7 @@
           // Validate all files
           const invalidFiles = Array.from(files).filter(file => !isValidFileType(file));
           if (invalidFiles.length > 0) {
-            showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOC/DOCX, or TXT files only.` });
+            showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.` });
             return;
           }
         }
@@ -554,9 +577,10 @@
               const successData = {
                 "ok": true,
                 "reports": [
-                  { "name": "report-1.pdf", "url": "https://filesamples.com/samples/document/txt/sample1.txt" },
-                  { "name": "report-2.csv", "url": "https://filesamples.com/samples/document/txt/sample2.txt" },
-                  { "name": "report-3.pdf", "url": "https://filesamples.com/samples/document/txt/sample3.txt" }
+                  { 
+                    "url": "https://n8n-dev.mindtech.studio/webhook-test/232a0caa-8e4d-4fdf-90ca-1facd01b44f8?key=cornerpxl-ad%2FMadison%20Montessori%20School%20Strategy%20Growth%20Blueprint%20%282026-01-29%29.pdf",
+                    "name": "Madison Montessori School Strategy Growth Blueprint (2026-01-29).pdf"
+                  }
               ]
               };
 
