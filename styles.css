@@ -168,7 +168,7 @@ input[type="file"]{display:none}
 
 .loadingInfo{
   max-width: 720px;
-  margin: 0 auto 0;
+  margin: 26px auto 0;
   text-align: center;
   color: var(--muted);
   font-size: 15px;
