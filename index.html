@@ -14,24 +14,6 @@
         <p class="subtitle">Paste links + upload context to generate brand, market, and strategy reports.</p>
       </div>
 
-      <!-- Test Mode Toggle -->
-      <div class="testMode">
-        <label class="testToggle">
-          <input type="checkbox" id="mockModeToggle" />
-          <span>Test Mode (Mock Responses)</span>
-        </label>
-        <div class="testOptions" id="testOptions" style="display: none;">
-          <label class="testRadio">
-            <input type="radio" name="mockResponse" value="success" checked />
-            <span>Success Response</span>
-          </label>
-          <label class="testRadio">
-            <input type="radio" name="mockResponse" value="error" />
-            <span>Error Response</span>
-          </label>
-        </div>
-      </div>
-
       <div class="panel">
         <form id="form">
           <div class="row">
@@ -42,7 +24,7 @@
             </div>
             <div class="field">
               <div class="label">LinkedIn Link</div>
-              <input class="input" type="url" name="linkedinLink" id="linkedinLink" placeholder="https://linkedin.com/in/..." />
+              <input class="input" type="url" name="linkedinLink" id="linkedinLink" placeholder="https://linkedin.com/in/..." required />
               <div class="errorMsg hidden" id="linkedinLinkError"></div>
             </div>
           </div>
@@ -165,9 +147,6 @@
       const downloadLinks = document.getElementById("downloadLinks");
       const okBtn = document.getElementById("okBtn");
 
-      const mockModeToggle = document.getElementById("mockModeToggle");
-      const testOptions = document.getElementById("testOptions");
-
       function humanSize(bytes){
         const mb = bytes / (1024*1024);
         if (mb >= 1) return `${mb.toFixed(2)} MB`;
@@ -194,7 +173,7 @@
       }
 
       function isValidLinkedInUrl(url){
-        if (!url || url.trim() === '') return true; // Optional field
+        if (!url || url.trim() === '') return false; // Required field
         const linkedinPattern = /^https?:\/\/(www\.)?linkedin\.com\/(in|company|school)\/.+/i;
         return linkedinPattern.test(url);
       }
@@ -227,8 +206,8 @@
       function validateLinkedInLink(){
         const value = linkedinLinkInput.value.trim();
         if (!value) {
-          hideError(linkedinLinkInput, linkedinLinkError);
-          return true; // Optional field
+          showError(linkedinLinkInput, linkedinLinkError, 'LinkedIn link is required');
+          return false;
         }
         if (!isValidUrl(value)) {
           showError(linkedinLinkInput, linkedinLinkError, 'Please enter a valid URL');
@@ -380,12 +359,6 @@
         websiteLinkInput.disabled = isLoading;
         linkedinLinkInput.disabled = isLoading;
         fileInput.disabled = isLoading;
-        mockModeToggle.disabled = isLoading;
-        
-        // Disable test mode radio buttons
-        document.querySelectorAll('input[name="mockResponse"]').forEach(radio => {
-          radio.disabled = isLoading;
-        });
         
         // Disable dropzone interactions
         if (isLoading) {
@@ -472,11 +445,6 @@
       }
       okBtn.addEventListener("click", resetFlow);
 
-      // Test mode toggle
-      mockModeToggle.addEventListener("change", (e) => {
-        testOptions.style.display = e.target.checked ? "flex" : "none";
-      });
-
       // Link validation event listeners
       websiteLinkInput.addEventListener("blur", validateWebsiteLink);
       websiteLinkInput.addEventListener("input", () => {
@@ -543,11 +511,7 @@
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
 
-        // Check if mock mode is enabled
-        const isMockMode = mockModeToggle?.checked;
-
-        // Only check webhook URL if not in mock mode
-        if (!isMockMode && !N8N_WEBHOOK_URL){
+        if (!N8N_WEBHOOK_URL){
           showModal({ ok:false, text:"Webhook URL is not configured. Please contact support." });
           return;
         }
@@ -581,79 +545,6 @@
         setLoading(true);
 
         try{
-          const mockResponseType = document.querySelector('input[name="mockResponse"]:checked')?.value || 'success';
-
-          if (isMockMode) {
-            // Simulate network delay (2 seconds)
-            await new Promise(resolve => setTimeout(resolve, 2000));
-
-            if (mockResponseType === 'error') {
-              // Mock error response
-              const errorData = {
-                error: "Cannot read properties of undefined (reading 'split')"
-              };
-              throw new Error(errorData.error);
-            } else {
-              // Mock success response
-              const successData = {
-                "ok": true,
-                "results": [
-                  {
-                    "name": "brandResearch",
-                    "url": "https://n8n-dev.mindtech.studio/webhook/6fca094c-0db6-4d2e-b602-4221addf6035?key=cornerpxl-ad/Madison Montessori Brand Research (2026-01-30).pdf"
-                  },
-                  {
-                    "name": "marketResearch",
-                    "url": "https://n8n-dev.mindtech.studio/webhook/6fca094c-0db6-4d2e-b602-4221addf6035?key=cornerpxl-ad/Madison Montessori School Strategy Growth Blueprint (2026-01-30).pdf"
-                  },
-                  {
-                    "name": "strategyBrief",
-                    "url": "https://n8n-dev.mindtech.studio/webhook/6fca094c-0db6-4d2e-b602-4221addf6035?key=undefined"
-                  }
-                ]
-              };
-
-              // Process mock success response
-              let reports = [];
-              if (successData.results && Array.isArray(successData.results)){
-                reports = successData.results.map((result, index) => {
-                  if (result.url){
-                    // Generate friendly name from result.name or use provided name
-                    let displayName = result.name;
-                    if (result.name === 'brandResearch') {
-                      displayName = 'Brand Research';
-                    } else if (result.name === 'marketResearch') {
-                      displayName = 'Market Research';
-                    } else if (result.name === 'strategyBrief') {
-                      displayName = 'Strategy Brief';
-                    }
-                    
-                    return {
-                      name: displayName || result.name || `Report ${index + 1}.pdf`,
-                      url: result.url
-                    };
-                  }
-                  return result;
-                });
-              }
-
-              showModal({
-                ok: true,
-                text: reports.length > 0 
-                  ? `Done! ${reports.length} report${reports.length > 1 ? 's' : ''} ${reports.length > 1 ? 'are' : 'is'} ready. You can download them below.`
-                  : "Done! Your reports have been processed.",
-                links: reports
-              });
-              setLoading(false);
-              return;
-            }
-          }
-
-          // Ensure webhook is not called when mock mode is enabled
-          if (isMockMode) {
-            return; // Already handled above, this is a safety guard
-          }
-
           const fd = new FormData();
           
           // Add form fields
