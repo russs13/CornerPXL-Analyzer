@@ -166,6 +166,24 @@ input[type="file"]{display:none}
 .cta:disabled{opacity: 0.6; cursor:not-allowed;}
 .cta:hover:not(:disabled){transform: translateY(-1px);}
 
+.loadingInfo{
+  max-width: 720px;
+  margin: 0 auto 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 600;
+  display: block;
+  opacity: 1;
+}
+.loadingInfo p{
+  margin: 0;
+  color: var(--muted);
+}
+.loadingInfo.hidden{
+  display: none !important;
+}
+
 .mini{
   margin: 26px auto 0;
   max-width: 920px;

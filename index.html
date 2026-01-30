@@ -63,6 +63,10 @@
         </form>
       </div>
 
+      <div class="loadingInfo hidden" id="loadingInfo">
+        <p>Usually takes up to 10 mins</p>
+      </div>
+
       <div class="mini">
         <div class="miniCard">
           <div class="icon center">
@@ -146,6 +150,7 @@
       const modalText = document.getElementById("modalText");
       const downloadLinks = document.getElementById("downloadLinks");
       const okBtn = document.getElementById("okBtn");
+      const loadingInfo = document.getElementById("loadingInfo");
 
       function humanSize(bytes){
         const mb = bytes / (1024*1024);
@@ -367,6 +372,17 @@
         } else {
           dropzone.style.pointerEvents = 'auto';
           dropzone.style.opacity = '1';
+        }
+        
+        // Show/hide loading info message
+        if (loadingInfo) {
+          if (isLoading) {
+            loadingInfo.classList.remove('hidden');
+            loadingInfo.style.display = 'block';
+          } else {
+            loadingInfo.classList.add('hidden');
+            loadingInfo.style.display = 'none';
+          }
         }
         
         if (isLoading){
