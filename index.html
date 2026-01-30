@@ -615,7 +615,23 @@
             return; // Already handled above, this is a safety guard
           }
 
-          const fd = new FormData(form); // includes websiteLink, linkedinLink, file
+          const fd = new FormData();
+          
+          // Add form fields
+          fd.append('websiteLink', form.websiteLink.value);
+          if (form.linkedinLink.value) {
+            fd.append('linkedinLink', form.linkedinLink.value);
+          }
+          
+          // Add files if any (as array)
+          const files = fileInput.files;
+          if (files && files.length > 0) {
+            // FormData with multiple files - each file is added with the same field name
+            Array.from(files).forEach(file => {
+              fd.append('file', file);
+            });
+          }
+          // If no files, 'file' field is not added to FormData
 
           const res = await fetch(N8N_WEBHOOK_URL, { method:"POST", body: fd });
 
