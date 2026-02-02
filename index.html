@@ -560,6 +560,10 @@
 
         setLoading(true);
 
+        // Declare cleanup variables outside try block so they're accessible in catch
+        let timeoutId;
+        let controller;
+
         try{
           const fd = new FormData();
           
@@ -579,7 +583,19 @@
           }
           // If no files, 'file' field is not added to FormData
 
-          const res = await fetch(N8N_WEBHOOK_URL, { method:"POST", body: fd });
+          // Create AbortController with extended timeout (15 minutes to account for processing time)
+          controller = new AbortController();
+          timeoutId = setTimeout(() => controller.abort(), 15 * 60 * 1000); // 15 minutes
+
+          const res = await fetch(N8N_WEBHOOK_URL, { 
+            method:"POST", 
+            body: fd,
+            signal: controller.signal,
+            keepalive: true // Helps prevent suspension
+          });
+
+          // Clear timeout on success
+          clearTimeout(timeoutId);
 
           if (!res.ok){
             const errText = await res.text().catch(()=>"");
@@ -672,7 +688,23 @@
           showModal({ ok:true, text:`Success (unexpected response): ${text.slice(0, 180)}...` });
 
         } catch (err){
-          showModal({ ok:false, text: `Error: ${err?.message || err}` });
+          // Always cleanup timeout on error
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+          
+          // Handle specific error types
+          let errorMessage = err?.message || 'Unknown error occurred';
+          
+          if (err.name === 'AbortError') {
+            errorMessage = 'Request timed out after 15 minutes. The processing may still be running. Please try again or contact support.';
+          } else if (err.message?.includes('Failed to fetch') || err.message?.includes('ERR_NETWORK')) {
+            errorMessage = 'Network connection was interrupted. This can happen if the browser tab becomes inactive. Please try again and keep the tab active during processing.';
+          } else if (err.message?.includes('suspended') || err.message?.includes('SUSPENDED')) {
+            errorMessage = 'Network request was suspended. Please keep this browser tab active and try again.';
+          }
+          
+          showModal({ ok:false, text: `Error: ${errorMessage}` });
         } finally {
           setLoading(false);
         }
