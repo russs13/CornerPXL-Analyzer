@@ -152,6 +152,389 @@
       const okBtn = document.getElementById("okBtn");
       const loadingInfo = document.getElementById("loadingInfo");
 
+      // ===== JOB-BASED FLOW: localStorage helpers =====
+      const JOB_STORAGE_KEY_PREFIX = "cornerpxl_job_";
+      const STATUS_CHECK_INTERVAL = 30000; // 30 seconds
+      const JOB_TTL_MS = 3600000; // 1 hour
+
+      let statusCheckIntervalId = null;
+      let isIntervalPaused = false;
+
+      // Generate or retrieve unique tabId for this tab
+      function getTabId() {
+        try {
+          let tabId = sessionStorage.getItem("cornerpxl_tabId");
+          if (!tabId) {
+            // Generate a unique ID for this tab
+            tabId = `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            sessionStorage.setItem("cornerpxl_tabId", tabId);
+          }
+          return tabId;
+        } catch (err) {
+          console.warn("Failed to get tabId from sessionStorage:", err);
+          // Fallback: generate a temporary ID (won't persist across reloads)
+          return `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        }
+      }
+
+      function getJobStorageKey() {
+        return JOB_STORAGE_KEY_PREFIX + getTabId();
+      }
+
+      function saveJob(jobObj) {
+        try {
+          const jobData = {
+            jobId: jobObj.jobId,
+            status: jobObj.status,
+            createdAt: jobObj.createdAt,
+            updatedAt: jobObj.updatedAt || jobObj.createdAt,
+            lastCheckedAt: jobObj.lastCheckedAt || null,
+            tabId: getTabId() // Store tabId in job data for verification
+          };
+          localStorage.setItem(getJobStorageKey(), JSON.stringify(jobData));
+        } catch (err) {
+          console.warn("Failed to save job to localStorage:", err);
+        }
+      }
+
+      function loadJob() {
+        try {
+          const stored = localStorage.getItem(getJobStorageKey());
+          if (!stored) return null;
+          const job = JSON.parse(stored);
+          // Verify tabId matches (in case of edge cases)
+          if (job.tabId && job.tabId !== getTabId()) {
+            console.warn("Job tabId mismatch, clearing job");
+            clearJob();
+            return null;
+          }
+          return job;
+        } catch (err) {
+          console.warn("Failed to load job from localStorage:", err);
+          return null;
+        }
+      }
+
+      function clearJob() {
+        try {
+          localStorage.removeItem(getJobStorageKey());
+        } catch (err) {
+          console.warn("Failed to clear job from localStorage:", err);
+        }
+      }
+
+      // Cleanup old jobs from localStorage where createdAt to updatedAt difference > 1 hour
+      function cleanupOldJobs() {
+        try {
+          const keysToRemove = [];
+          
+          // Scan all localStorage keys
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            
+            // Check if this is a job key
+            if (key && key.startsWith(JOB_STORAGE_KEY_PREFIX)) {
+              try {
+                const jobData = JSON.parse(localStorage.getItem(key));
+                
+                // Check if job has both createdAt and updatedAt
+                if (jobData && jobData.createdAt && jobData.updatedAt) {
+                  const createdAt = Date.parse(jobData.createdAt);
+                  const updatedAt = Date.parse(jobData.updatedAt);
+                  
+                  // If timestamps are valid, check the difference
+                  if (!isNaN(createdAt) && !isNaN(updatedAt)) {
+                    const timeDiff = updatedAt - createdAt;
+                    
+                    // If difference is more than 1 hour, mark for removal
+                    if (timeDiff > JOB_TTL_MS) {
+                      keysToRemove.push(key);
+                    }
+                  }
+                }
+              } catch (parseErr) {
+                // If we can't parse the job data, it's corrupted - remove it
+                console.warn("Found corrupted job data, removing:", key);
+                keysToRemove.push(key);
+              }
+            }
+          }
+          
+          // Remove old jobs
+          keysToRemove.forEach(key => {
+            try {
+              localStorage.removeItem(key);
+              console.log("Removed old job:", key);
+            } catch (err) {
+              console.warn("Failed to remove old job:", key, err);
+            }
+          });
+          
+          if (keysToRemove.length > 0) {
+            console.log(`Cleanup completed: removed ${keysToRemove.length} old job(s)`);
+          }
+        } catch (err) {
+          console.warn("Failed to cleanup old jobs:", err);
+        }
+      }
+
+      function isJobExpired(job) {
+        if (!job || !job.updatedAt) return true;
+        const updatedAt = Date.parse(job.updatedAt);
+        if (isNaN(updatedAt)) return true;
+        return (Date.now() - updatedAt) > JOB_TTL_MS;
+      }
+
+      // ===== STATUS CHECKING =====
+      async function checkJobStatusOnce(jobId) {
+        if (!N8N_WEBHOOK_URL || !jobId) {
+          console.warn("Cannot check status: missing webhook URL or jobId");
+          return null;
+        }
+
+        try {
+          const response = await fetch(N8N_WEBHOOK_URL, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ jobId }),
+            mode: "cors",
+            credentials: "omit"
+          });
+
+          if (!response.ok) {
+            throw new Error(`Status check failed: ${response.status}`);
+          }
+
+          const data = await response.json();
+          
+          // n8n returns a single object (or array with one object - handle both)
+          let item;
+          if (Array.isArray(data)) {
+            if (data.length === 0) {
+              console.warn("Invalid status response format: empty array");
+              return null;
+            }
+            item = data[0];
+          } else if (data && typeof data === 'object') {
+            item = data;
+          } else {
+            console.warn("Invalid status response format");
+            return null;
+          }
+
+          if (!item.jobId || item.jobId !== jobId) {
+            console.warn("JobId mismatch in status response");
+            return null;
+          }
+
+          // Update localStorage with latest status
+          const currentJob = loadJob();
+          if (currentJob && currentJob.jobId === jobId) {
+            saveJob({
+              ...currentJob,
+              status: item.status,
+              updatedAt: item.updatedAt || new Date().toISOString(),
+              lastCheckedAt: new Date().toISOString()
+            });
+          }
+
+          return item;
+        } catch (err) {
+          // Network errors: keep job and retry next interval
+          console.warn("Status check failed (will retry):", err.message);
+          return null; // Return null to indicate transient error
+        }
+      }
+
+      function mapResultNameToDisplayName(name) {
+        if (name === 'brandResearch') return 'Brand Research';
+        if (name === 'marketResearch') return 'Market Research';
+        if (name === 'strategyBrief') return 'Strategy Brief';
+        return name;
+      }
+
+      function handleJobStatusUpdate(item) {
+        if (!item) return; // Transient error, will retry
+
+        const status = item.status;
+
+        if (status === "completed") {
+          // Stop interval
+          stopStatusInterval();
+          
+          // Extract results
+          if (item.results && item.results.ok === true && Array.isArray(item.results.results)) {
+            // Map results to links format
+            const links = item.results.results.map((result) => {
+              const displayName = mapResultNameToDisplayName(result.name || result.filename);
+              return {
+                name: displayName || `Report`,
+                url: result.url
+              };
+            });
+
+            // Show success modal with links (keep localStorage until Done click)
+            showModal({
+              ok: true,
+              text: links.length > 0 
+                ? `Done! ${links.length} report${links.length > 1 ? 's' : ''} ${links.length > 1 ? 'are' : 'is'} ready.`
+                : "Done! Your reports have been processed.",
+              links: links
+            });
+          } else {
+            // Completed but no results - treat as error
+            showModal({
+              ok: false,
+              text: "Job completed but no results were returned. Please try again."
+            });
+            clearJob();
+          }
+          
+          setLoading(false);
+        } else if (status === "failed") {
+          // Stop interval
+          stopStatusInterval();
+          
+          // Extract error message
+          let errorText = "Job failed. Please try again.";
+          if (item.error) {
+            if (typeof item.error === "string") {
+              errorText = item.error;
+            } else if (item.error.message) {
+              errorText = item.error.message;
+            }
+          }
+          
+          // Show error modal and clear localStorage immediately
+          showModal({
+            ok: false,
+            text: errorText
+          });
+          
+          clearJob();
+          setLoading(false);
+        } else if (status === "processing" || status === "pending") {
+          // Keep loading, continue checking (pending is treated like processing)
+          // Status already updated in localStorage
+        } else {
+          // Unknown status - treat as transient error
+          console.warn("Unknown job status:", status);
+        }
+      }
+
+      // ===== INTERVAL MANAGEMENT =====
+      function startStatusInterval() {
+        // Prevent multiple intervals
+        if (statusCheckIntervalId !== null) {
+          return;
+        }
+
+        const job = loadJob();
+        if (!job || !job.jobId) {
+          console.warn("Cannot start status interval: no job found");
+          return;
+        }
+
+        // Check status immediately
+        checkJobStatusOnce(job.jobId).then(handleJobStatusUpdate);
+
+        // Then check every 30 seconds
+        statusCheckIntervalId = setInterval(() => {
+          if (isIntervalPaused) {
+            return; // Skip if paused
+          }
+
+          const currentJob = loadJob();
+          if (!currentJob || !currentJob.jobId) {
+            stopStatusInterval();
+            return;
+          }
+
+          // Check TTL
+          if (isJobExpired(currentJob)) {
+            stopStatusInterval();
+            setLoading(false);
+            clearJob();
+            showModal({
+              ok: false,
+              text: "Job expired after 1 hour of inactivity. Please submit a new request."
+            });
+            return;
+          }
+
+          checkJobStatusOnce(currentJob.jobId).then(handleJobStatusUpdate);
+        }, STATUS_CHECK_INTERVAL);
+      }
+
+      function stopStatusInterval() {
+        if (statusCheckIntervalId !== null) {
+          clearInterval(statusCheckIntervalId);
+          statusCheckIntervalId = null;
+        }
+      }
+
+      // ===== VISIBILITY HANDLING =====
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          // Tab hidden: pause interval (don't make requests)
+          isIntervalPaused = true;
+        } else {
+          // Tab visible: resume interval
+          isIntervalPaused = false;
+          
+          // If we have an active job, check status immediately
+          const job = loadJob();
+          if (job && (job.status === "processing" || job.status === "pending") && !isJobExpired(job)) {
+            checkJobStatusOnce(job.jobId).then(handleJobStatusUpdate);
+          }
+        }
+      });
+
+      // ===== RESUME ON LOAD =====
+      function resumeJobOnLoad() {
+        const job = loadJob();
+        if (!job || !job.jobId) {
+          return; // No stored job
+        }
+
+        // Check if expired
+        if (isJobExpired(job)) {
+          clearJob();
+          return;
+        }
+
+        // Check if terminal state
+        if (job.status === "completed" || job.status === "failed") {
+          // Terminal state: clear if failed, keep if completed (until Done click)
+          if (job.status === "failed") {
+            clearJob();
+          }
+          return;
+        }
+
+        // Resume processing job (pending is treated like processing)
+        if (job.status === "processing" || job.status === "pending") {
+          setLoading(true);
+          startStatusInterval();
+          // Immediately check status
+          checkJobStatusOnce(job.jobId).then(handleJobStatusUpdate);
+        }
+      }
+
+      // Call on page load
+      window.addEventListener("load", () => {
+        cleanupOldJobs(); // Clean up old jobs first
+        resumeJobOnLoad();
+      });
+
+      // Also call immediately if DOM is already loaded
+      if (document.readyState === "complete" || document.readyState === "interactive") {
+        cleanupOldJobs(); // Clean up old jobs first
+        resumeJobOnLoad();
+      }
+
       function humanSize(bytes){
         const mb = bytes / (1024*1024);
         if (mb >= 1) return `${mb.toFixed(2)} MB`;
@@ -455,6 +838,10 @@
         form.reset();
         setFileLine(null);
         setLoading(false);
+        // Stop status checking interval
+        stopStatusInterval();
+        // Clear job from localStorage (user clicked Done)
+        clearJob();
         // Clear validation errors
         hideError(websiteLinkInput, websiteLinkError);
         hideError(linkedinLinkInput, linkedinLinkError);
@@ -532,6 +919,25 @@
           return;
         }
 
+        // Check for existing processing job (pending is treated like processing)
+        const existingJob = loadJob();
+        if (existingJob && (existingJob.status === "processing" || existingJob.status === "pending") && !isJobExpired(existingJob)) {
+          // Resume existing job: show loader and start status checking
+          setLoading(true);
+          startStatusInterval();
+          // Immediately check status
+          checkJobStatusOnce(existingJob.jobId).then(handleJobStatusUpdate);
+          return;
+        }
+
+        // Clear any expired or terminal jobs
+        if (existingJob) {
+          if (isJobExpired(existingJob) || existingJob.status === "failed") {
+            clearJob();
+          }
+          // If completed, keep it (user hasn't clicked Done yet)
+        }
+
         // Validate links
         const isWebsiteLinkValid = validateWebsiteLink();
         const isLinkedInLinkValid = validateLinkedInLink();
@@ -560,11 +966,7 @@
 
         setLoading(true);
 
-        // Declare cleanup variables outside try block so they're accessible in catch
-        let timeoutId;
-        let controller;
-
-        try{
+        try {
           const fd = new FormData();
           
           // Add form fields
@@ -574,7 +976,6 @@
           }
           
           // Add files if any (as array)
-          const files = fileInput.files;
           if (files && files.length > 0) {
             // FormData with multiple files - each file is added with the same field name
             Array.from(files).forEach(file => {
@@ -583,129 +984,61 @@
           }
           // If no files, 'file' field is not added to FormData
 
-          // Create AbortController with extended timeout (20 minutes to account for processing time)
-          controller = new AbortController();
-          timeoutId = setTimeout(() => controller.abort(), 20 * 60 * 1000); // 20 minutes
-
+          // Start job request (no Content-Type header for FormData)
           const res = await fetch(N8N_WEBHOOK_URL, { 
-            method:"POST", 
+            method: "POST", 
             body: fd,
-            signal: controller.signal,
-            keepalive: true // Helps prevent suspension
+            mode: "cors",
+            credentials: "omit"
           });
 
-          // Clear timeout on success
-          clearTimeout(timeoutId);
-
-          if (!res.ok){
-            const errText = await res.text().catch(()=>"");
+          if (!res.ok) {
+            const errText = await res.text().catch(() => "");
             throw new Error(errText || `Request failed (${res.status})`);
           }
 
-          const ct = (res.headers.get("content-type") || "").toLowerCase();
-
-          // A) ZIP/binary
-          if (ct.includes("application/zip") || ct.includes("application/octet-stream")){
-            const blob = await res.blob();
-            downloadBlob(blob, "reports.zip");
-            showModal({ ok:true, text:"Done! Report download will start now." });
-            return;
-          }
-
-          // B) JSON with URLs or file URLs
-          if (ct.includes("application/json")){
-            const data = await res.json();
-            if (!data?.ok) throw new Error(data?.error || "Workflow returned ok=false");
-            
-            // Processing results: can be array of files or array of URLs
-            let reports = [];
-            if (data.results && Array.isArray(data.results)){
-              reports = data.results.map((result, index) => {
-                // If this is a base64 file
-                if (result.base64 && result.filename){
-                  const blob = base64ToBlob(result.base64, result.mimeType || "application/pdf");
-                  const url = URL.createObjectURL(blob);
-                  return {
-                    name: result.filename,
-                    url: url
-                  };
-                }
-                // If this is a URL
-                if (result.url){
-                  // Generate friendly name from result.name
-                  let displayName = result.name;
-                  if (result.name === 'brandResearch') {
-                    displayName = 'Brand Research';
-                  } else if (result.name === 'marketResearch') {
-                    displayName = 'Market Research';
-                  } else if (result.name === 'strategyBrief') {
-                    displayName = 'Strategy Brief';
-                  }
-                  
-                  return {
-                    name: displayName || result.name || result.filename || `Report ${index + 1}.pdf`,
-                    url: result.url
-                  };
-                }
-                // If this is just a string (URL)
-                if (typeof result === "string"){
-                  return {
-                    name: `Report ${index + 1}.pdf`,
-                    url: result
-                  };
-                }
-                return result;
-              });
-            }
-            
-            // Auto-download files if they are blob URLs
-            reports.forEach((report, index) => {
-              if (report.url && report.url.startsWith('blob:')){
-                // This is a blob URL, auto-downloading
-                setTimeout(() => {
-                  const a = document.createElement("a");
-                  a.href = report.url;
-                  a.download = report.name || `report-${index + 1}.pdf`;
-                  document.body.appendChild(a);
-                  a.click();
-                  a.remove();
-                }, index * 300); // Delay between downloads
-              }
-            });
-            
-            showModal({
-              ok:true,
-              text: reports.length > 0 
-                ? `Done! ${reports.length} report${reports.length > 1 ? 's' : ''} ${reports.length > 1 ? 'are' : 'is'} downloading automatically. You can also download them below.`
-                : "Done! Your reports have been processed.",
-              links: reports
-            });
-            return;
-          }
-
-          // fallback
-          const text = await res.text();
-          showModal({ ok:true, text:`Success (unexpected response): ${text.slice(0, 180)}...` });
-
-        } catch (err){
-          // Always cleanup timeout on error
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-          }
+          const data = await res.json();
           
-          // Handle specific error types
+          // n8n returns a single object (or array with one object - handle both)
+          let jobItem;
+          if (Array.isArray(data)) {
+            if (data.length === 0) {
+              throw new Error("Invalid response format: empty array");
+            }
+            jobItem = data[0];
+          } else if (data && typeof data === 'object') {
+            jobItem = data;
+          } else {
+            throw new Error("Invalid response format: expected object or array with job object");
+          }
+
+          if (!jobItem.jobId) {
+            throw new Error("Invalid job response: missing jobId");
+          }
+
+          // Default status to "pending" if not provided
+          const jobStatus = jobItem.status || "pending";
+
+          // Save job to localStorage
+          saveJob({
+            jobId: jobItem.jobId,
+            status: jobStatus,
+            createdAt: jobItem.createdAt || new Date().toISOString(),
+            updatedAt: jobItem.updatedAt || jobItem.createdAt || new Date().toISOString()
+          });
+
+          // Start status checking interval
+          startStatusInterval();
+
+        } catch (err) {
+          // Handle errors
           let errorMessage = err?.message || 'Unknown error occurred';
           
-          if (err.name === 'AbortError') {
-            errorMessage = 'Request timed out after 20 minutes. The processing may still be running. Please try again or contact support.';
-          } else if (err.message?.includes('Failed to fetch') || err.message?.includes('ERR_NETWORK')) {
-            errorMessage = 'Network connection was interrupted. This can happen if the browser tab becomes inactive. Please try again and keep the tab active during processing.';
-          } else if (err.message?.includes('suspended') || err.message?.includes('SUSPENDED')) {
-            errorMessage = 'Network request was suspended. Please keep this browser tab active and try again.';
+          if (err.message?.includes('Failed to fetch') || err.message?.includes('ERR_NETWORK')) {
+            errorMessage = 'Network connection failed. Please check your connection and try again.';
           }
           
-          showModal({ ok:false, text: `Error: ${errorMessage}` });
-        } finally {
+          showModal({ ok: false, text: `Error: ${errorMessage}` });
           setLoading(false);
         }
       });
