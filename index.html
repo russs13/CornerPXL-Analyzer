@@ -583,9 +583,9 @@
           }
           // If no files, 'file' field is not added to FormData
 
-          // Create AbortController with extended timeout (15 minutes to account for processing time)
+          // Create AbortController with extended timeout (20 minutes to account for processing time)
           controller = new AbortController();
-          timeoutId = setTimeout(() => controller.abort(), 15 * 60 * 1000); // 15 minutes
+          timeoutId = setTimeout(() => controller.abort(), 20 * 60 * 1000); // 20 minutes
 
           const res = await fetch(N8N_WEBHOOK_URL, { 
             method:"POST", 
@@ -697,7 +697,7 @@
           let errorMessage = err?.message || 'Unknown error occurred';
           
           if (err.name === 'AbortError') {
-            errorMessage = 'Request timed out after 15 minutes. The processing may still be running. Please try again or contact support.';
+            errorMessage = 'Request timed out after 20 minutes. The processing may still be running. Please try again or contact support.';
           } else if (err.message?.includes('Failed to fetch') || err.message?.includes('ERR_NETWORK')) {
             errorMessage = 'Network connection was interrupted. This can happen if the browser tab becomes inactive. Please try again and keep the tab active during processing.';
           } else if (err.message?.includes('suspended') || err.message?.includes('SUSPENDED')) {
