@@ -16,6 +16,12 @@
 
       <div class="panel">
         <form id="form">
+          <div class="field fieldFull">
+            <div class="label">Email</div>
+            <input class="input" type="email" name="email" id="email" placeholder="you@example.com" required autocomplete="email" />
+            <p class="fieldHint">You will receive the report at this email address.</p>
+            <div class="errorMsg hidden" id="emailError"></div>
+          </div>
           <div class="row">
             <div class="field">
               <div class="label">Website Link</div>
@@ -134,7 +140,11 @@
       const fileInput = document.getElementById("fileInput");
       const browseBtn = document.getElementById("browseBtn");
       const fileLine = document.getElementById("fileLine");
+      // Keep a copy of current files so "Browse" can add to the list instead of replacing
+      let supportingFilesList = [];
       
+      const emailInput = document.getElementById("email");
+      const emailError = document.getElementById("emailError");
       const websiteLinkInput = document.getElementById("websiteLink");
       const linkedinLinkInput = document.getElementById("linkedinLink");
       const websiteLinkError = document.getElementById("websiteLinkError");
@@ -562,7 +572,7 @@
 
       function isValidLinkedInUrl(url){
         if (!url || url.trim() === '') return false; // Required field
-        const linkedinPattern = /^https?:\/\/(www\.)?linkedin\.com\/(in|company|school)\/.+/i;
+        const linkedinPattern = /^https?:\/\/(www\.)?linkedin\.com\/(in|company|school|showcase)\/.+/i;
         return linkedinPattern.test(url);
       }
 
@@ -575,6 +585,26 @@
       function hideError(inputElement, errorElement){
         inputElement.classList.remove('error');
         errorElement.classList.add('hidden');
+      }
+
+      function isValidEmail(value) {
+        if (!value || value.trim() === '') return false;
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailPattern.test(value.trim());
+      }
+
+      function validateEmail() {
+        const value = emailInput.value.trim();
+        if (!value) {
+          showError(emailInput, emailError, 'Email is required');
+          return false;
+        }
+        if (!isValidEmail(value)) {
+          showError(emailInput, emailError, 'Please enter a valid email address');
+          return false;
+        }
+        hideError(emailInput, emailError);
+        return true;
       }
 
       function validateWebsiteLink(){
@@ -602,7 +632,7 @@
           return false;
         }
         if (!isValidLinkedInUrl(value)) {
-          showError(linkedinLinkInput, linkedinLinkError, 'Please enter a valid LinkedIn URL (e.g., https://linkedin.com/in/username)');
+          showError(linkedinLinkInput, linkedinLinkError, 'Please enter a valid LinkedIn URL (e.g., linkedin.com/in/username or linkedin.com/showcase/page-name)');
           return false;
         }
         hideError(linkedinLinkInput, linkedinLinkError);
@@ -627,6 +657,7 @@
         if (!files || files.length === 0){ 
           fileLine.classList.add("hidden"); 
           fileLine.innerHTML=""; 
+          supportingFilesList = [];
           return; 
         }
         
@@ -635,6 +666,7 @@
           fileLine.classList.remove("hidden");
           fileLine.innerHTML = `<span style="color: var(--error);">Maximum 5 files allowed. Please select fewer files.</span>`;
           fileInput.value = ''; // Clear the files
+          supportingFilesList = [];
           return;
         }
         
@@ -644,9 +676,11 @@
           fileLine.classList.remove("hidden");
           fileLine.innerHTML = `<span style="color: var(--error);">Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.</span>`;
           fileInput.value = ''; // Clear the invalid files
+          supportingFilesList = [];
           return;
         }
         
+        supportingFilesList = Array.from(files);
         // Display all files with remove buttons
         fileLine.classList.remove("hidden");
         const filesList = Array.from(files).map((file, index) => 
@@ -744,6 +778,7 @@
         analyzeBtn.disabled = isLoading;
         
         // Disable/enable all form inputs
+        emailInput.disabled = isLoading;
         websiteLinkInput.disabled = isLoading;
         linkedinLinkInput.disabled = isLoading;
         fileInput.disabled = isLoading;
@@ -782,7 +817,9 @@
         }
       }
 
-      function showModal({ ok, text, links }){
+      let modalNoResetOnClose = false;
+      function showModal({ ok, text, links, noResetOnClose }){
+        modalNoResetOnClose = !!noResetOnClose;
         overlay.classList.add("show");
         badge.className = "badge";
         if (ok){
@@ -843,12 +880,27 @@
         // Clear job from localStorage (user clicked Done)
         clearJob();
         // Clear validation errors
+        hideError(emailInput, emailError);
         hideError(websiteLinkInput, websiteLinkError);
         hideError(linkedinLinkInput, linkedinLinkError);
       }
-      okBtn.addEventListener("click", resetFlow);
+      okBtn.addEventListener("click", () => {
+        if (modalNoResetOnClose) {
+          overlay.classList.remove("show");
+          modalNoResetOnClose = false;
+        } else {
+          resetFlow();
+        }
+      });
 
       // Link validation event listeners
+      emailInput.addEventListener("blur", validateEmail);
+      emailInput.addEventListener("input", () => {
+        if (emailInput.classList.contains('error')) {
+          validateEmail();
+        }
+      });
+
       websiteLinkInput.addEventListener("blur", validateWebsiteLink);
       websiteLinkInput.addEventListener("input", () => {
         if (websiteLinkInput.classList.contains('error')) {
@@ -869,7 +921,32 @@
         fileInput.click();
       });
 
-      fileInput.addEventListener("change", () => setFileLine(fileInput.files || null));
+      fileInput.addEventListener("change", () => {
+        const newFiles = fileInput.files ? Array.from(fileInput.files) : [];
+        const existingFiles = supportingFilesList;
+        const allFiles = [...existingFiles, ...newFiles];
+        if (allFiles.length > 5) {
+          showModal({ ok: false, text: `Maximum 5 files allowed. You have ${existingFiles.length} file(s) and tried to add ${newFiles.length}. Please select fewer files.`, noResetOnClose: true });
+          restoreFileInputFromList();
+          return;
+        }
+        const invalidFiles = newFiles.filter(file => !isValidFileType(file));
+        if (invalidFiles.length > 0) {
+          showModal({ ok: false, text: `Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.`, noResetOnClose: true });
+          restoreFileInputFromList();
+          return;
+        }
+        const dt = new DataTransfer();
+        allFiles.forEach(file => dt.items.add(file));
+        fileInput.files = dt.files;
+        setFileLine(fileInput.files);
+      });
+
+      function restoreFileInputFromList() {
+        const dt = new DataTransfer();
+        supportingFilesList.forEach(file => dt.items.add(file));
+        fileInput.files = dt.files;
+      }
 
       function prevent(e){ e.preventDefault(); e.stopPropagation(); }
 
@@ -884,27 +961,22 @@
         const droppedFiles = e.dataTransfer?.files;
         if (!droppedFiles || droppedFiles.length === 0) return;
         
-        // Get existing files
-        const existingFiles = fileInput.files ? Array.from(fileInput.files) : [];
+        // Use supportingFilesList as source of truth (fileInput.files can be cleared during drag on some browsers)
+        const existingFiles = supportingFilesList.slice();
         const newFiles = Array.from(droppedFiles);
-        
-        // Combine existing and new files
         const allFiles = [...existingFiles, ...newFiles];
         
-        // Check file count limit
         if (allFiles.length > 5) {
-          showModal({ ok:false, text:`Maximum 5 files allowed. You have ${existingFiles.length} file(s) and tried to add ${newFiles.length}. Please drop fewer files.` });
+          showModal({ ok:false, text:`Maximum 5 files allowed. You have ${existingFiles.length} file(s) and tried to add ${newFiles.length}. Please drop fewer files.`, noResetOnClose: true });
           return;
         }
         
-        // Validate new files only
         const invalidFiles = newFiles.filter(file => !isValidFileType(file));
         if (invalidFiles.length > 0) {
-          showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.` });
+          showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.`, noResetOnClose: true });
           return;
         }
         
-        // Add all files to input
         const dt = new DataTransfer();
         allFiles.forEach(file => dt.items.add(file));
         fileInput.files = dt.files;
@@ -939,10 +1011,11 @@
         }
 
         // Validate links
+        const isEmailValid = validateEmail();
         const isWebsiteLinkValid = validateWebsiteLink();
         const isLinkedInLinkValid = validateLinkedInLink();
         
-        if (!isWebsiteLinkValid || !isLinkedInLinkValid) {
+        if (!isEmailValid || !isWebsiteLinkValid || !isLinkedInLinkValid) {
           return; // Validation errors are shown inline
         }
 
@@ -952,14 +1025,14 @@
         if (files && files.length > 0) {
           // Check file count limit
           if (files.length > 5) {
-            showModal({ ok:false, text:"Maximum 5 files allowed. Please select fewer files." });
+            showModal({ ok:false, text:"Maximum 5 files allowed. Please select fewer files.", noResetOnClose: true });
             return;
           }
           
           // Validate all files
           const invalidFiles = Array.from(files).filter(file => !isValidFileType(file));
           if (invalidFiles.length > 0) {
-            showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.` });
+            showModal({ ok:false, text:`Unsupported file type: ${invalidFiles[0].name}. Please upload PDF, DOCX, or TXT files only.`, noResetOnClose: true });
             return;
           }
         }
@@ -970,6 +1043,7 @@
           const fd = new FormData();
           
           // Add form fields
+          fd.append('email', form.email.value.trim());
           fd.append('websiteLink', form.websiteLink.value);
           if (form.linkedinLink.value) {
             fd.append('linkedinLink', form.linkedinLink.value);
